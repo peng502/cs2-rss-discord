@@ -4,7 +4,7 @@ import fetch from 'node-fetch';
 import { XMLParser } from 'fast-xml-parser';
 
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK;
-const FEED_URL = 'https://store.steampowered.com/feeds/news/app/730';
+const FEED_URL = 'http://feeds.bbci.co.uk/news/rss.xml';
 const STATE_FILE = path.join('.state.json');
 
 async function main() {
