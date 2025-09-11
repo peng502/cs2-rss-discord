@@ -1,5 +1,6 @@
 name: CS2 RSS → Discord
-
+permissions:
+  contents: write
 on:
   schedule:
     - cron: "* * * * *"
