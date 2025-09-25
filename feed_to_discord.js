@@ -6,7 +6,7 @@ import { XMLParser } from 'fast-xml-parser';
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK;
 const FEED_URL = 'https://store.steampowered.com/feeds/news/app/730';
 const STATE_FILE = path.join('.state.json');
-const MAX_HISTORY = 200; // 最多保留的历史链接数量
+const MAX_LINKS = 200;
 
 async function main() {
   // 读取 RSS feed
@@ -35,30 +35,30 @@ async function main() {
     }
   }
 
-  // 找到未发送过的所有更新
+  // 找到未发送过的最新更新，按时间顺序
   const toSend = items
-    .sort((a, b) => b.pubDate - a.pubDate)   // 最新在前
+    .sort((a, b) => b.pubDate - a.pubDate)  // 最新在前
     .filter(it => !state.sentLinks.includes(it.link))
-    .reverse();                               // 保持时间顺序
+    .reverse();  // 发送顺序按时间从旧到新
 
   for (const it of toSend) {
     const content = `**CS2 Update**\n${it.title}\n${it.link}`;
-    await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content })
-    });
-
-    // 更新 state.json
-    state.sentLinks.push(it.link);
-
-    // 保留最近 MAX_HISTORY 条
-    if (state.sentLinks.length > MAX_HISTORY) {
-      state.sentLinks = state.sentLinks.slice(-MAX_HISTORY);
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+    } catch (err) {
+      console.error('Failed to send to Discord:', err);
     }
-  }
 
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    // 更新 state.json，每条发送后立即写入
+    state.sentLinks.push(it.link);
+    // 保留最近 MAX_LINKS 条
+    state.sentLinks = state.sentLinks.slice(-MAX_LINKS);
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  }
 }
 
 main().catch(err => {
