@@ -10,20 +10,17 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      # 1️⃣ 拉取代码
       - uses: actions/checkout@v4
-
-      # 2️⃣ 安装 Node
       - uses: actions/setup-node@v4
         with:
           node-version: "18"
-
-      # 3️⃣ 下载上一次的 .state.json artifact（如果存在）
-      - name: Download previous state
-        uses: actions/download-artifact@v4
-        with:
-          name: cs2-rss-state
-          path: ./
-
-      # 4️⃣ 安装依赖
       - run: npm install
+      - name: Run script
+        run: node feed_to_discord.js
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      - name: Save state
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update state"
+          file_pattern: .state.json
