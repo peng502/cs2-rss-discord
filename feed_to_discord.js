@@ -8,63 +8,50 @@ const FEED_URL = 'https://store.steampowered.com/feeds/news/app/730';
 const STATE_FILE = path.join('.state.json');
 
 async function main() {
+  // 读取 RSS feed
   const res = await fetch(FEED_URL, { headers: { 'User-Agent': 'rss2discord' } });
   const xml = await res.text();
 
   const parser = new XMLParser({ ignoreAttributes: false });
   const data = parser.parse(xml);
 
-  let items = (data?.rss?.channel?.item || []).map(it => {
-    let link = it.link.trim();
-    // 确保使用中文链接
-    if (!link.includes('?l=schinese')) {
-      link += '?l=schinese';
-    }
-    return {
-      title: it.title,
-      link,
-      pubDate: new Date(it.pubDate || 0).getTime()
-    };
-  });
+  const items = (data?.rss?.channel?.item || []).map(it => ({
+    title: it.title,
+    link: it.link,
+    pubDate: new Date(it.pubDate || 0).getTime()
+  }));
 
-  if (!items.length) {
-    console.log('⚠️ 没有抓到任何新闻');
-    return;
-  }
+  if (!items.length) return;
 
-  // 加点调试输出
-  console.log('✅ RSS 抓到的新闻:');
-  items.forEach(it => console.log(`- ${it.title} (${it.link})`));
-
+  // 读取 state.json，如果不存在就初始化
   let state = { sentLinks: [] };
   if (fs.existsSync(STATE_FILE)) {
-    state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    try {
+      state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      if (!state.sentLinks) state.sentLinks = [];
+    } catch {
+      state = { sentLinks: [] };
+    }
   }
 
-  console.log('🗂 已发送过的链接:', state.sentLinks);
-
+  // 找到未发送过的最新一条
   const toSend = items
-    .sort((a, b) => b.pubDate - a.pubDate)
-    .slice(0, 5)
+    .sort((a, b) => b.pubDate - a.pubDate)   // 最新在前
     .filter(it => !state.sentLinks.includes(it.link))
-    .reverse();
-
-  console.log('📩 本次需要发送的新闻:', toSend.map(it => it.link));
+    .slice(0, 1)                             // 只取最新一条
+    .reverse();                               // 保持时间顺序
 
   for (const it of toSend) {
     const content = `**CS2 Update**\n${it.title}\n${it.link}`;
-    const resp = await fetch(WEBHOOK_URL, {
+    await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
     });
 
-    if (!resp.ok) {
-      console.error(`❌ 发送失败: ${resp.status} ${resp.statusText}`);
-    } else {
-      console.log(`✅ 已发送: ${it.title}`);
-      state.sentLinks = [...state.sentLinks, it.link].slice(-100);
-    }
+    // 更新 state.json
+    state.sentLinks.push(it.link);
+    state.sentLinks = state.sentLinks.slice(-100); // 保留最近 100 条
   }
 
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
