@@ -51,7 +51,6 @@ async function main() {
 
     // 更新 state.json
     state.sentLinks.push(it.link);
-    state.sentLinks = state.sentLinks.slice(-100); // 保留最近 100 条
   }
 
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
