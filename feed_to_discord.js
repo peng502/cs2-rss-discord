@@ -6,6 +6,7 @@ import { XMLParser } from 'fast-xml-parser';
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK;
 const FEED_URL = 'https://store.steampowered.com/feeds/news/app/730';
 const STATE_FILE = path.join('.state.json');
+const MAX_HISTORY = 200; // 最多保留的历史链接数量
 
 async function main() {
   // 读取 RSS feed
@@ -34,12 +35,11 @@ async function main() {
     }
   }
 
-  // 找到未发送过的最新一条
+  // 找到未发送过的所有更新
   const toSend = items
-  .sort((a, b) => b.pubDate - a.pubDate)
-  .filter(it => !state.sentLinks.includes(it.link))
-  .reverse();  // 保持时间顺序
-
+    .sort((a, b) => b.pubDate - a.pubDate)   // 最新在前
+    .filter(it => !state.sentLinks.includes(it.link))
+    .reverse();                               // 保持时间顺序
 
   for (const it of toSend) {
     const content = `**CS2 Update**\n${it.title}\n${it.link}`;
@@ -51,6 +51,11 @@ async function main() {
 
     // 更新 state.json
     state.sentLinks.push(it.link);
+
+    // 保留最近 MAX_HISTORY 条
+    if (state.sentLinks.length > MAX_HISTORY) {
+      state.sentLinks = state.sentLinks.slice(-MAX_HISTORY);
+    }
   }
 
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
