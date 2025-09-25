@@ -1,37 +1,29 @@
 name: CS2 RSS → Discord
-
+permissions:
+  contents: write
 on:
   schedule:
-    - cron: "* * * * *"  # 每分钟运行
-  workflow_dispatch: {}   # 可以手动触发
+    - cron: "* * * * *"  # 每分钟检查一次
+  workflow_dispatch: {}
 
 jobs:
   run:
     runs-on: ubuntu-latest
-
     steps:
-      # 拉取仓库
+      # 1️⃣ 拉取代码
       - uses: actions/checkout@v4
 
-      # 设置 Node
+      # 2️⃣ 安装 Node
       - uses: actions/setup-node@v4
         with:
           node-version: "18"
 
-      # 缓存 npm
-      - name: Cache Node modules
-        uses: actions/cache@v3
+      # 3️⃣ 下载上一次的 .state.json artifact（如果存在）
+      - name: Download previous state
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+          name: cs2-rss-state
+          path: ./
 
-      # 安装依赖
+      # 4️⃣ 安装依赖
       - run: npm install
-
-      # 运行脚本
-      - name: Run RSS → Discord
-        run: node feed_to_discord.js
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
