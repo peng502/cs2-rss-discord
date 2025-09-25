@@ -36,10 +36,10 @@ async function main() {
 
   // 找到未发送过的最新一条
   const toSend = items
-    .sort((a, b) => b.pubDate - a.pubDate)   // 最新在前
-    .filter(it => !state.sentLinks.includes(it.link))
-    .slice(0, 1)                             // 只取最新一条
-    .reverse();                               // 保持时间顺序
+  .sort((a, b) => b.pubDate - a.pubDate)
+  .filter(it => !state.sentLinks.includes(it.link))
+  .reverse();  // 保持时间顺序
+
 
   for (const it of toSend) {
     const content = `**CS2 Update**\n${it.title}\n${it.link}`;
