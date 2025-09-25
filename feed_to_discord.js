@@ -14,18 +14,34 @@ async function main() {
   const parser = new XMLParser({ ignoreAttributes: false });
   const data = parser.parse(xml);
 
-  const items = (data?.rss?.channel?.item || []).map(it => ({
-    title: it.title,
-    link: it.link,
-    pubDate: new Date(it.pubDate || 0).getTime()
-  }));
+  let items = (data?.rss?.channel?.item || []).map(it => {
+    let link = it.link.trim();
+    // 确保使用中文链接
+    if (!link.includes('?l=schinese')) {
+      link += '?l=schinese';
+    }
+    return {
+      title: it.title,
+      link,
+      pubDate: new Date(it.pubDate || 0).getTime()
+    };
+  });
 
-  if (!items.length) return;
+  if (!items.length) {
+    console.log('⚠️ 没有抓到任何新闻');
+    return;
+  }
+
+  // 加点调试输出
+  console.log('✅ RSS 抓到的新闻:');
+  items.forEach(it => console.log(`- ${it.title} (${it.link})`));
 
   let state = { sentLinks: [] };
   if (fs.existsSync(STATE_FILE)) {
     state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
   }
+
+  console.log('🗂 已发送过的链接:', state.sentLinks);
 
   const toSend = items
     .sort((a, b) => b.pubDate - a.pubDate)
@@ -33,14 +49,22 @@ async function main() {
     .filter(it => !state.sentLinks.includes(it.link))
     .reverse();
 
+  console.log('📩 本次需要发送的新闻:', toSend.map(it => it.link));
+
   for (const it of toSend) {
     const content = `**CS2 Update**\n${it.title}\n${it.link}`;
-    await fetch(WEBHOOK_URL, {
+    const resp = await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
     });
-    state.sentLinks = [...state.sentLinks, it.link].slice(-100);
+
+    if (!resp.ok) {
+      console.error(`❌ 发送失败: ${resp.status} ${resp.statusText}`);
+    } else {
+      console.log(`✅ 已发送: ${it.title}`);
+      state.sentLinks = [...state.sentLinks, it.link].slice(-100);
+    }
   }
 
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
