@@ -1,63 +1,49 @@
 import fs from 'fs';
 import path from 'path';
+import fetch from 'node-fetch';
 import { XMLParser } from 'fast-xml-parser';
 
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK;
 const FEED_URL = 'https://store.steampowered.com/feeds/news/app/730';
-const STATE_FILE = path.join(process.cwd(), '.state.json');
+const STATE_FILE = path.join('.state.json');
 const MAX_LINKS = 200;
 
-// Helper to prevent hitting Discord's rate limit
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// 去 HTML + 截断
+function cleanText(html = '', max = 300) {
+  const text = html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > max ? text.slice(0, max) + '…' : text;
+}
 
 async function main() {
-  if (!WEBHOOK_URL) {
-    console.error("❌ Error: DISCORD_WEBHOOK secret is missing or empty.");
-    process.exit(1); 
-  }
-
-  let res;
-  try {
-    // Disguise the request as a standard web browser to bypass basic CDN blocks
-    res = await fetch(FEED_URL, { 
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-      } 
-    });
-  } catch (err) {
-    // If Steam forcefully drops the connection, exit gracefully (Exit 0) instead of failing the workflow
-    console.error("⚠️ Network error fetching Steam feed. Steam likely dropped the connection:", err.message);
-    return; 
-  }
-
-  if (!res.ok) {
-    console.error(`⚠️ Steam feed returned HTTP ${res.status}. Exiting safely until next run.`);
-    return;
-  }
+  const res = await fetch(FEED_URL, {
+    headers: { 'User-Agent': 'rss-to-discord-bot' }
+  });
 
   const xml = await res.text();
 
-  // Force 'item' to ALWAYS be parsed as an array to prevent .map() crashes
-  const parser = new XMLParser({ 
+  const parser = new XMLParser({
     ignoreAttributes: false,
-    isArray: (name) => name === 'item' 
+    cdataPropName: 'cdata'
   });
-  
+
   const data = parser.parse(xml);
-  const channelItems = data?.rss?.channel?.item || [];
 
-  const items = channelItems.map(it => ({
-    title: it.title,
-    link: it.link,
-    pubDate: new Date(it.pubDate || 0).getTime()
-  }));
+  const items = (data?.rss?.channel?.item || []).map(it => {
+    const desc = it.description || it['content:encoded'] || it.cdata || '';
+    return {
+      title: it.title,
+      link: it.link,
+      pubDate: new Date(it.pubDate || 0).getTime(),
+      summary: cleanText(desc)
+    };
+  });
 
-  if (!items.length) {
-    console.log("No items found in the feed at this time.");
-    return;
-  }
+  if (!items.length) return;
 
+  // 读取 state
   let state = { sentLinks: [] };
   if (fs.existsSync(STATE_FILE)) {
     try {
@@ -68,35 +54,55 @@ async function main() {
     }
   }
 
+  // 找新内容
   const toSend = items
-    .sort((a, b) => b.pubDate - a.pubDate)  
+    .sort((a, b) => b.pubDate - a.pubDate)
     .filter(it => !state.sentLinks.includes(it.link))
-    .reverse();  
+    .reverse();
 
   for (const it of toSend) {
-    const content = `**CS2 Update**\n${it.title}\n${it.link}`;
+    const embed = {
+      title: it.title,
+      url: it.link,
+      description: it.summary || 'New CS2 update',
+      color: 15105570,
+      timestamp: new Date(it.pubDate).toISOString(),
+      author: {
+        name: 'Counter-Strike 2 Update',
+        icon_url: 'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/730/capsule_184x69.jpg'
+      },
+      thumbnail: {
+        url: 'https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/730/capsule_184x69.jpg'
+      },
+      footer: {
+        text: 'Steam News'
+      }
+    };
+
+    const content = `**CS2 Update**`;
+
     try {
-      const hookRes = await fetch(WEBHOOK_URL, {
+      await fetch(WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({
+          content,
+          embeds: [embed]
+        })
       });
-      
-      if (!hookRes.ok) console.error(`❌ Discord webhook rejected message: HTTP ${hookRes.status}`);
     } catch (err) {
-      console.error('❌ Failed to send to Discord:', err);
+      console.error('Discord send error:', err);
     }
 
+    // 更新 state
     state.sentLinks.push(it.link);
     state.sentLinks = state.sentLinks.slice(-MAX_LINKS);
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 
-    // Wait 1.5 seconds between messages so Discord doesn't block the webhook
-    await sleep(1500); 
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   }
 }
 
 main().catch(err => {
-  console.error("Unhandled execution error:", err);
+  console.error(err);
   process.exit(1);
 });
