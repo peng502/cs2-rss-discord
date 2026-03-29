@@ -1,6 +1,7 @@
 name: CS2 RSS → Discord
 permissions:
   contents: write
+  actions: write
 on:
   schedule:
     - cron: "* * * * *"  # 每分钟检查一次
@@ -24,3 +25,4 @@ jobs:
         with:
           commit_message: "chore: update state"
           file_pattern: .state.json
+          push_options: '--force'
